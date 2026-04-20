@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EUR/JPY LSTM Predictor</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            animation: slideDown 0.6s ease-out;
+        }
+        
+        header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        header p {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 50px rgba(0,0,0,0.3);
+        }
+        
+        .price-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .price-item {
+            text-align: center;
+        }
+        
+        .price-label {
+            color: #999;
+            font-size: 0.9em;
+            margin-bottom: 5px;
+        }
+        
+        .price-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .change-indicator {
+            font-size: 1.2em;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        
+        .change-up {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .change-down {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .predict-btn {
+            width: 100%;
+            padding: 15px;
+            font-size: 1.1em;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: opacity 0.3s ease;
+        }
+        
+        .predict-btn:hover {
+            opacity: 0.9;
+        }
+        
+        .predict-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .model-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            font-size: 0.9em;
+        }
+        
+        .model-info h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .model-info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .model-info-item:last-child {
+            border-bottom: none;
+        }
+        
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 400px;
+        }
+        
+        .error-message {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            color: #155724;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .controls select,
+        .controls button {
+            padding: 10px 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background: white;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        
+        .controls button {
+            background: #667eea;
+            color: white;
+            border: none;
+        }
+        
+        .controls button:hover {
+            background: #764ba2;
+        }
+        
+        @media (max-width: 768px) {
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+            
+            header h1 {
+                font-size: 1.8em;
+            }
+            
+            .price-display {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🏦 EUR/JPY Price Predictor</h1>
+            <p>LSTM Neural Network Powered Forex Prediction</p>
+        </header>
+        
+        <div class="error-message" id="errorMsg"></div>
+        <div class="success-message" id="successMsg"></div>
+        
+        <div class="main-content">
+            <!-- Price Section -->
+            <div class="card">
+                <h2>Current Price & Prediction</h2>
+                
+                <div class="price-display">
+                    <div class="price-item">
+                        <div class="price-label">Current EUR/JPY</div>
+                        <div class="price-value" id="currentPrice">--</div>
+                    </div>
+                    <div class="price-item">
+                        <div class="price-label" id="predictedPriceLabel">Week 1 Prediction</div>
+                        <div class="price-value" id="predictedPriceWeek1">--</div>
+                    </div>
+                    <div class="price-item">
+                        <div class="price-label">Week 2 Prediction</div>
+                        <div class="price-value" id="predictedPriceWeek2">--</div>
+                    </div>
+                </div>
+                
+                <div id="changeIndicator" class="change-indicator" style="display: none;">
+                    <span id="changeValue">--</span>
+                </div>
+                
+                <button class="predict-btn" onclick="makePrediction()">
+                    Make Prediction
+                </button>
+                
+                <div class="model-info">
+                    <h4>Model Information</h4>
+                    <div id="modelInfoContainer">
+                        <p>Loading model info...</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Historical Chart -->
+            <div class="card">
+                <h2>Historical Prices (30 Days)</h2>
+                <div class="chart-container">
+                    <canvas id="priceChart"></canvas>
+                </div>
+            </div>
+            
+            <!-- Advanced Chart -->
+            <div class="card full-width">
+                <h2>Extended Historical Data</h2>
+                <div class="controls">
+                    <select id="timeframeSelect">
+                        <option value="30">30 Days</option>
+                        <option value="90" selected>90 Days</option>
+                        <option value="180">180 Days</option>
+                        <option value="365">1 Year</option>
+                    </select>
+                    <button onclick="updateHistoricalChart()">Update Chart</button>
+                </div>
+                <div class="chart-container">
+                    <canvas id="historicalChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        let priceChart = null;
+        let historicalChart = null;
+        let lastPrediction = null;
+        
+        // Initialize
+        window.addEventListener('load', function() {
+            loadCurrentPrice();
+            loadModelInfo();
+            updateHistoricalChart();
+            // Refresh price every 60 seconds
+            setInterval(loadCurrentPrice, 60000);
+        });
+        
+        function loadCurrentPrice() {
+            fetch('/api/current-price')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('currentPrice').textContent = data.current_price.toFixed(4);
+                        
+                        // Update historical chart
+                        if (data.historical.length > 0 && priceChart) {
+                            priceChart.data.labels = data.dates;
+                            priceChart.data.datasets[0].data = data.historical;
+                            priceChart.update();
+                        }
+                    }
+                })
+                .catch(error => showError('Failed to load current price: ' + error));
+        }
+        
+        function makePrediction() {
+            const btn = event.target;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>Making Prediction...';
+            
+            fetch('/api/predict', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    document.getElementById('predictedPriceWeek1').textContent = data.week1_predicted_price.toFixed(4);
+                    document.getElementById('predictedPriceWeek2').textContent = data.week2_predicted_price.toFixed(4);
+                    lastPrediction = data;
+                    applyPredictionToCharts(data);
+                    
+                    const changeDiv = document.getElementById('changeIndicator');
+                    const changeValue = document.getElementById('changeValue');
+                    const sign = data.change > 0 ? '+' : '';
+                    
+                    changeValue.textContent = sign + data.change.toFixed(2) + '%';
+                    changeDiv.className = 'change-indicator ' + (data.change_direction === 'up' ? 'change-up' : 'change-down');
+                    changeDiv.style.display = 'block';
+                    
+                    showSuccess('Prediction made successfully for week 1 and week 2!');
+                } else {
+                    showError('Prediction failed: ' + data.error);
+                }
+            })
+            .catch(error => showError('Error making prediction: ' + error))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = 'Make Prediction';
+            });
+        }
+        
+        function loadModelInfo() {
+            fetch('/api/model-info')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        let html = '';
+                        for (const [key, value] of Object.entries(data)) {
+                            if (key !== 'success') {
+                                const label = key.replace(/_/g, ' ').toUpperCase();
+                                html += `<div class="model-info-item">
+                                    <strong>${label}</strong>
+                                    <span>${value}</span>
+                                </div>`;
+                            }
+                        }
+                        document.getElementById('modelInfoContainer').innerHTML = html;
+                    }
+                })
+                .catch(error => console.error('Error loading model info:', error));
+        }
+        
+        function updateHistoricalChart() {
+            const days = document.getElementById('timeframeSelect').value;
+            
+            fetch(`/api/historical-data?days=${days}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const chartData = data.data;
+                        
+                        if (historicalChart) {
+                            historicalChart.destroy();
+                        }
+                        
+                        const ctx = document.getElementById('historicalChart').getContext('2d');
+                        historicalChart = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: chartData.dates,
+                                datasets: [
+                                    {
+                                        label: 'Close Price',
+                                        data: chartData.close,
+                                        borderColor: '#667eea',
+                                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                                        borderWidth: 2,
+                                        tension: 0.4,
+                                        fill: true
+                                    },
+                                    {
+                                        label: 'Forecast (Week 1 & Week 2)',
+                                        data: [],
+                                        borderColor: '#ff7f50',
+                                        backgroundColor: 'rgba(255, 127, 80, 0.12)',
+                                        borderWidth: 2,
+                                        borderDash: [6, 4],
+                                        pointRadius: 4,
+                                        tension: 0.2,
+                                        fill: false
+                                    }
+                                ]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: {
+                                        display: true,
+                                        position: 'top'
+                                    }
+                                },
+                                scales: {
+                                    y: {
+                                        beginAtZero: false,
+                                        title: {
+                                            display: true,
+                                            text: 'Price (JPY)'
+                                        }
+                                    }
+                                }
+                            }
+                        });
+
+                        if (lastPrediction) {
+                            applyPredictionToCharts(lastPrediction);
+                        }
+                    }
+                })
+                .catch(error => showError('Failed to load historical data: ' + error));
+        }
+
+        function applyPredictionToCharts(pred) {
+            const week1Date = pred.week1_date;
+            const week2Date = pred.week2_date;
+            const week1Price = pred.week1_predicted_price;
+            const week2Price = pred.week2_predicted_price;
+
+            if (historicalChart && historicalChart.data.labels.length > 0) {
+                const labels = [...historicalChart.data.labels];
+                const closeData = historicalChart.data.datasets[0].data;
+                const lastActual = closeData[closeData.length - 1];
+
+                labels.push(week1Date, week2Date);
+                historicalChart.data.labels = labels;
+
+                // Keep actual series aligned by padding future points with null
+                historicalChart.data.datasets[0].data = [...closeData, null, null];
+
+                // Forecast series starts from last known point then extends to week1/week2
+                const forecastSeries = new Array(closeData.length - 1).fill(null);
+                forecastSeries.push(lastActual, week1Price, week2Price);
+                historicalChart.data.datasets[1].data = forecastSeries;
+                historicalChart.update();
+            }
+
+            if (priceChart && priceChart.data.labels.length > 0) {
+                const labels = [...priceChart.data.labels];
+                const priceData = [...priceChart.data.datasets[0].data];
+                const lastActual = priceData[priceData.length - 1];
+
+                labels.push(week1Date, week2Date);
+                priceChart.data.labels = labels;
+                priceChart.data.datasets[0].data = [...priceData, null, null];
+
+                if (!priceChart.data.datasets[1]) {
+                    priceChart.data.datasets.push({
+                        label: 'Forecast (Week 1 & Week 2)',
+                        data: [],
+                        borderColor: '#ff7f50',
+                        backgroundColor: 'rgba(255, 127, 80, 0.12)',
+                        borderWidth: 2,
+                        borderDash: [6, 4],
+                        pointRadius: 4,
+                        tension: 0.2,
+                        fill: false
+                    });
+                }
+
+                const forecastSeries = new Array(priceData.length - 1).fill(null);
+                forecastSeries.push(lastActual, week1Price, week2Price);
+                priceChart.data.datasets[1].data = forecastSeries;
+                priceChart.update();
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMsg');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+        
+        function showSuccess(message) {
+            const successDiv = document.getElementById('successMsg');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => {
+                successDiv.style.display = 'none';
+            }, 3000);
+        }
+        
+        // Initialize simple price chart on load
+        window.addEventListener('load', function() {
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            priceChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [
+                        {
+                            label: 'EUR/JPY Price',
+                            data: [],
+                            borderColor: '#764ba2',
+                            backgroundColor: 'rgba(118, 75, 162, 0.1)',
+                            borderWidth: 2,
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false
+                        }
+                    }
+                }
+            });
+        });
+    </script>
+</body>
+</html>
