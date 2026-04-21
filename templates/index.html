@@ -280,6 +280,26 @@
                 <div id="changeIndicator" class="change-indicator" style="display: none;">
                     <span id="changeValue">--</span>
                 </div>
+
+                <div class="model-info" style="margin-top: 20px;">
+                    <h4>Trend Strength Signal</h4>
+                    <div class="model-info-item">
+                        <strong>Signal</strong>
+                        <span id="trendSignal">Loading...</span>
+                    </div>
+                    <div class="model-info-item">
+                        <strong>Strength</strong>
+                        <span id="trendStrength">--</span>
+                    </div>
+                    <div class="model-info-item">
+                        <strong>ADX</strong>
+                        <span id="trendAdx">--</span>
+                    </div>
+                    <div class="model-info-item">
+                        <strong>MACD Hist</strong>
+                        <span id="trendMacd">--</span>
+                    </div>
+                </div>
                 
                 <button class="predict-btn" onclick="makePrediction()">
                     Make Prediction
@@ -340,6 +360,7 @@
                 .then(data => {
                     if (data.success) {
                         document.getElementById('currentPrice').textContent = data.current_price.toFixed(4);
+                        updateTrendSignal(data);
                         
                         // Update historical chart
                         if (data.historical.length > 0 && priceChart) {
@@ -368,6 +389,7 @@
                 if (data.success) {
                     document.getElementById('predictedPriceWeek1').textContent = data.week1_predicted_price.toFixed(4);
                     document.getElementById('predictedPriceWeek2').textContent = data.week2_predicted_price.toFixed(4);
+                    updateTrendSignal(data);
                     lastPrediction = data;
                     applyPredictionToCharts(data);
                     
@@ -411,6 +433,13 @@
                 })
                 .catch(error => console.error('Error loading model info:', error));
         }
+
+            function updateTrendSignal(data) {
+                document.getElementById('trendSignal').textContent = data.trend_signal || 'Unavailable';
+                document.getElementById('trendStrength').textContent = data.trend_strength || '--';
+                document.getElementById('trendAdx').textContent = data.adx == null ? '--' : data.adx.toFixed(2);
+                document.getElementById('trendMacd').textContent = data.macd_hist == null ? '--' : data.macd_hist.toFixed(4);
+            }
         
         function updateHistoricalChart() {
             const days = document.getElementById('timeframeSelect').value;

@@ -17,7 +17,8 @@ class LSTMPredictor:
         self.model_dir = model_dir
         self.lookback = lookback
         self.model = None
-        self.scaler = None
+        self.target_scaler = None
+        self.feature_columns = []
         os.makedirs(model_dir, exist_ok=True)
         
     def build_model(self, input_shape):
@@ -75,7 +76,10 @@ class LSTMPredictor:
         print(f"Model saved to {model_path}")
         
         # Save lookback parameter
-        params = {'lookback': self.lookback}
+        params = {
+            'lookback': self.lookback,
+            'feature_columns': self.feature_columns,
+        }
         params_path = os.path.join(self.model_dir, f'{name}_params.pkl')
         with open(params_path, 'wb') as f:
             pickle.dump(params, f)
@@ -93,6 +97,7 @@ class LSTMPredictor:
         with open(params_path, 'rb') as f:
             params = pickle.load(f)
             self.lookback = params['lookback']
+            self.feature_columns = params.get('feature_columns', [])
         
         return self.model
     
@@ -141,14 +146,15 @@ def train_eurjpy_model():
     
     # Prepare data
     try:
-        X_train, X_test, y_train, y_test, scaled_prices = scraper.prepare_data(data, lookback=60)
+        X_train, X_test, y_train, y_test, scaled_prices, feature_data = scraper.prepare_data(data, lookback=60)
     except ValueError as e:
         print(f"Data preparation failed: {e}")
         return
     
     # Build and train model
     predictor = LSTMPredictor(lookback=60)
-    predictor.scaler = scraper.scaler  # Store scaler for later use
+    predictor.target_scaler = scraper.target_scaler
+    predictor.feature_columns = scraper.feature_columns
     
     model = predictor.build_model((X_train.shape[1], X_train.shape[2]))
     history = predictor.train(X_train, y_train, X_test, y_test, epochs=50, batch_size=32)
