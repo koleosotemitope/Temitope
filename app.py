@@ -464,6 +464,66 @@ def predict():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/prophet-predict', methods=['POST'])
+def prophet_predict():
+    """Predict EUR/JPY prices for the next 14 days using Facebook Prophet."""
+    try:
+        from prophet import Prophet
+
+        scraper = EURJPYDataScraper()
+        data = scraper.fetch_data(
+            period=DATA_CONFIG.get('historical_period', '10y'),
+            local_path=DATA_CONFIG.get('local_csv_path')
+        )
+        if data is None or data.empty:
+            return jsonify({'success': False, 'error': 'Could not load local price data'}), 500
+
+        # Prophet requires columns 'ds' (datetime) and 'y' (value)
+        df_prophet = data[['Close']].reset_index()
+        df_prophet.columns = ['ds', 'y']
+        df_prophet['ds'] = pd.to_datetime(df_prophet['ds']).dt.tz_localize(None)
+
+        m = Prophet(daily_seasonality=False, weekly_seasonality=True, yearly_seasonality=True)
+        m.fit(df_prophet)
+
+        horizon_days = int(PREDICTION_CONFIG.get('forecast_days', 14))
+        future = m.make_future_dataframe(periods=horizon_days)
+        forecast = m.predict(future)
+
+        future_forecast = forecast.tail(horizon_days)
+        forecast_dates = future_forecast['ds'].dt.strftime('%Y-%m-%d').tolist()
+        forecast_prices = [round(float(v), 4) for v in future_forecast['yhat'].tolist()]
+        forecast_lower  = [round(float(v), 4) for v in future_forecast['yhat_lower'].tolist()]
+        forecast_upper  = [round(float(v), 4) for v in future_forecast['yhat_upper'].tolist()]
+
+        current_price = float(data['Close'].iloc[-1])
+        day7_index  = min(6,  len(forecast_prices) - 1)
+        day14_index = min(13, len(forecast_prices) - 1)
+        day7_price  = forecast_prices[day7_index]
+        day14_price = forecast_prices[day14_index]
+        day7_change  = ((day7_price  - current_price) / current_price) * 100
+        day14_change = ((day14_price - current_price) / current_price) * 100
+
+        return jsonify({
+            'success': True,
+            'current_price': current_price,
+            'forecast_dates': forecast_dates,
+            'forecast_prices': forecast_prices,
+            'forecast_lower': forecast_lower,
+            'forecast_upper': forecast_upper,
+            'day7_date': forecast_dates[day7_index],
+            'day14_date': forecast_dates[day14_index],
+            'day7_predicted_price': day7_price,
+            'day14_predicted_price': day14_price,
+            'day7_change': round(float(day7_change), 2),
+            'day14_change': round(float(day14_change), 2),
+            'model': 'Facebook Prophet',
+        })
+    except Exception as e:
+        print(f"Prophet prediction error: {e}")
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/model-info')
 def get_model_info():
     """Get model information"""

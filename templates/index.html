@@ -695,7 +695,7 @@
                     <div class="predict-hint">Run forecast to update 7-day and 14-day checkpoints</div>
                 </div>
 
-                <button class="predict-btn" onclick="makePrediction()">
+                <button class="predict-btn" onclick="makePrediction(this)">
                     Make Prediction
                 </button>
 
@@ -777,6 +777,72 @@
                 </div>
             </div>
             
+            <!-- Facebook Prophet Forecast Card -->
+            <div class="card" id="prophetCard">
+                <div class="card-header">
+                    <div>
+                        <h2>Facebook Prophet Forecast</h2>
+                        <p>Additive time-series decomposition model with trend, weekly and yearly seasonality components.</p>
+                    </div>
+                    <div class="section-chip" style="background:#e8f4fd;color:#0077b6;">Prophet</div>
+                </div>
+
+                <div class="price-display">
+                    <div class="price-item">
+                        <div class="price-label">Current EUR/JPY</div>
+                        <div class="price-value" id="prophetCurrentPrice">--</div>
+                    </div>
+                    <div class="price-item">
+                        <div class="price-label">7-Day (Prophet)</div>
+                        <div class="price-value" id="prophetDay7">--</div>
+                    </div>
+                    <div class="price-item">
+                        <div class="price-label">14-Day (Prophet)</div>
+                        <div class="price-value" id="prophetDay14">--</div>
+                    </div>
+                </div>
+
+                <div class="action-row" style="margin-bottom:18px;">
+                    <div id="prophetChangeIndicator" class="change-indicator" style="display:none;margin:0;">
+                        <span id="prophetChangeValue">--</span>
+                    </div>
+                    <div class="predict-hint">Prophet uses statistical decomposition — independent of the LSTM model.</div>
+                </div>
+
+                <button class="predict-btn" id="prophetBtn" onclick="makeProphetPrediction(this)"
+                    style="background:linear-gradient(135deg,#0077b6 0%,#023e8a 60%,#03045e 100%);box-shadow:0 18px 32px rgba(0,77,182,0.28);">
+                    Run Prophet Forecast
+                </button>
+
+                <div class="insight-grid" style="margin-top:18px;">
+                    <div class="price-item" style="min-height:auto;">
+                        <div class="panel-title">7-Day Change</div>
+                        <div id="prophetDay7Change" class="price-value" style="font-size:1.4rem;">--</div>
+                    </div>
+                    <div class="price-item" style="min-height:auto;">
+                        <div class="panel-title">14-Day Change</div>
+                        <div id="prophetDay14Change" class="price-value" style="font-size:1.4rem;">--</div>
+                    </div>
+                </div>
+
+                <!-- Prophet confidence band info -->
+                <div class="model-info" style="margin-top:18px;" id="prophetBandInfo">
+                    <div class="panel-title">Confidence Bands (14-Day)</div>
+                    <div class="model-info-item">
+                        <strong>Day 7 Low / High</strong>
+                        <span id="prophetDay7Band">--</span>
+                    </div>
+                    <div class="model-info-item">
+                        <strong>Day 14 Low / High</strong>
+                        <span id="prophetDay14Band">--</span>
+                    </div>
+                </div>
+
+                <div class="chart-container" style="margin-top:18px;">
+                    <canvas id="prophetChart"></canvas>
+                </div>
+            </div>
+
             <!-- Historical Chart -->
             <div class="card">
                 <div class="card-header">
@@ -819,6 +885,7 @@
     <script>
         let priceChart = null;
         let historicalChart = null;
+        let prophetChart = null;
         let lastPrediction = null;
         
         // Initialize
@@ -826,6 +893,8 @@
             loadCurrentPrice();
             loadModelInfo();
             updateHistoricalChart();
+            // Auto-run prediction so forecast fields populate without manual click.
+            setTimeout(() => makePrediction(), 800);
             // Refresh price every 60 seconds
             setInterval(loadCurrentPrice, 60000);
         });
@@ -849,8 +918,11 @@
                 .catch(error => showError('Failed to load current price: ' + error));
         }
         
-        function makePrediction() {
-            const btn = event.target;
+        function makePrediction(triggerBtn = null) {
+            const btn = triggerBtn || document.querySelector('.predict-btn');
+            if (!btn) {
+                return;
+            }
             btn.disabled = true;
             btn.innerHTML = '<span class="loading"></span>Making Prediction...';
             
@@ -1115,6 +1187,127 @@
             }
         }
         
+        function makeProphetPrediction(btn) {
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>Running Prophet...';
+
+            fetch('/api/prophet-predict', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) { showError('Prophet failed: ' + data.error); return; }
+
+                document.getElementById('prophetCurrentPrice').textContent = data.current_price.toFixed(4);
+                document.getElementById('prophetDay7').textContent  = data.day7_predicted_price.toFixed(4);
+                document.getElementById('prophetDay14').textContent = data.day14_predicted_price.toFixed(4);
+
+                const sign7  = data.day7_change  > 0 ? '+' : '';
+                const sign14 = data.day14_change > 0 ? '+' : '';
+                const color7  = data.day7_change  >= 0 ? '#0f6b3d' : '#b54708';
+                const color14 = data.day14_change >= 0 ? '#0f6b3d' : '#b54708';
+                document.getElementById('prophetDay7Change').textContent  = sign7  + data.day7_change.toFixed(2)  + '%';
+                document.getElementById('prophetDay14Change').textContent = sign14 + data.day14_change.toFixed(2) + '%';
+                document.getElementById('prophetDay7Change').style.color  = color7;
+                document.getElementById('prophetDay14Change').style.color = color14;
+
+                const changeDiv = document.getElementById('prophetChangeIndicator');
+                const changeVal = document.getElementById('prophetChangeValue');
+                changeVal.textContent = sign14 + data.day14_change.toFixed(2) + '% (14-day)';
+                changeDiv.className = 'change-indicator ' + (data.day14_change >= 0 ? 'change-up' : 'change-down');
+                changeDiv.style.display = 'block';
+
+                // Confidence bands
+                const d7i  = Math.min(6,  data.forecast_prices.length - 1);
+                const d14i = Math.min(13, data.forecast_prices.length - 1);
+                document.getElementById('prophetDay7Band').textContent =
+                    data.forecast_lower[d7i].toFixed(4) + ' / ' + data.forecast_upper[d7i].toFixed(4);
+                document.getElementById('prophetDay14Band').textContent =
+                    data.forecast_lower[d14i].toFixed(4) + ' / ' + data.forecast_upper[d14i].toFixed(4);
+
+                renderProphetChart(data);
+                showSuccess('Prophet forecast complete — 14-day projection ready.');
+            })
+            .catch(err => showError('Prophet error: ' + err))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = 'Run Prophet Forecast';
+            });
+        }
+
+        function renderProphetChart(data) {
+            const labels = data.forecast_dates;
+            const prices = data.forecast_prices;
+            const lower  = data.forecast_lower;
+            const upper  = data.forecast_upper;
+
+            if (prophetChart) { prophetChart.destroy(); }
+
+            const ctx = document.getElementById('prophetChart').getContext('2d');
+            prophetChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Prophet Forecast',
+                            data: prices,
+                            borderColor: '#0077b6',
+                            backgroundColor: 'rgba(0, 119, 182, 0.12)',
+                            borderWidth: 2,
+                            tension: 0.35,
+                            fill: false,
+                            pointRadius: 3,
+                        },
+                        {
+                            label: 'Upper Band',
+                            data: upper,
+                            borderColor: 'rgba(0,119,182,0.25)',
+                            backgroundColor: 'rgba(0,119,182,0.08)',
+                            borderWidth: 1,
+                            borderDash: [4, 4],
+                            tension: 0.35,
+                            fill: '+1',
+                            pointRadius: 0,
+                        },
+                        {
+                            label: 'Lower Band',
+                            data: lower,
+                            borderColor: 'rgba(0,119,182,0.25)',
+                            backgroundColor: 'rgba(0,119,182,0.08)',
+                            borderWidth: 1,
+                            borderDash: [4, 4],
+                            tension: 0.35,
+                            fill: false,
+                            pointRadius: 0,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, position: 'top' },
+                        tooltip: {
+                            callbacks: {
+                                label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(4)
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            title: { display: true, text: 'EUR/JPY Price' }
+                        },
+                        x: {
+                            ticks: { maxTicksLimit: 7 }
+                        }
+                    }
+                }
+            });
+        }
+
         function showError(message) {
             const errorDiv = document.getElementById('errorMsg');
             errorDiv.textContent = message;
