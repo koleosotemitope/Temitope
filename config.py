@@ -57,7 +57,7 @@ PREPROCESSING_CONFIG = {
 
 # Prediction Configuration
 PREDICTION_CONFIG = {
-    'forecast_weeks': 2,
+    'forecast_days': 14,
     'confidence_threshold': 0.5,
     'ensemble_enabled': False,
     'use_moving_average': True,

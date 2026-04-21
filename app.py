@@ -17,6 +17,125 @@ latest_data = None
 feature_columns = []
 
 
+def detect_current_trend_weakening(feature_data):
+    """Detect if CURRENT trend is weakening with detailed risk metrics.
+    
+    Returns: {
+        'is_weakening': True|False,
+        'risk_level': 'critical'|'high'|'moderate'|'low'|'none',
+        'risk_score': 0-100,
+        'reasons': [list of specific indicators],
+        'adx_trend': 'declining'|'flat'|'rising',
+        'macd_trend': 'declining'|'flat'|'rising',
+        'ema_signal': 'bearish'|'neutral'|'bullish',
+    }
+    """
+    if feature_data is None or len(feature_data) < 5:
+        return {
+            'is_weakening': False,
+            'risk_level': 'none',
+            'risk_score': 0,
+            'reasons': [],
+            'adx_trend': 'unknown',
+            'macd_trend': 'unknown',
+            'ema_signal': 'unknown',
+        }
+    
+    # Extract last 5 values to detect trends
+    adx_values = feature_data['ADX'].tail(5).astype(float).values
+    macd_values = feature_data['MACD_HIST'].tail(5).astype(float).values
+    ema20_values = feature_data['EMA20'].tail(5).astype(float).values
+    ema20_slope = feature_data['EMA20_SLOPE'].tail(5).astype(float).values
+    close_prices = feature_data['Close'].tail(5).astype(float).values
+    
+    current_adx = adx_values[-1]
+    current_macd = macd_values[-1]
+    current_ema20 = ema20_values[-1]
+    current_price = close_prices[-1]
+    
+    reasons = []
+    risk_score = 0
+    
+    # ADX Analysis (Trend Strength Decline)
+    adx_trend = 'flat'
+    if adx_values[-1] < adx_values[-2] < adx_values[-3]:
+        adx_trend = 'declining'
+        risk_score += 25
+        reasons.append(f"ADX declining (now {current_adx:.1f}, was {adx_values[-3]:.1f})")
+    elif adx_values[-1] > adx_values[-2]:
+        adx_trend = 'rising'
+        risk_score -= 10
+    
+    # MACD Histogram Analysis (Momentum Decline)
+    macd_trend = 'flat'
+    if macd_values[-1] < macd_values[-2] < macd_values[-3]:
+        macd_trend = 'declining'
+        risk_score += 20
+        reasons.append(f"MACD momentum declining ({macd_values[-1]:.6f})")
+    elif macd_values[-1] > macd_values[-2]:
+        macd_trend = 'rising'
+        risk_score -= 5
+    
+    # EMA20 Slope Analysis (Price-MA Divergence)
+    ema_signal = 'neutral'
+    avg_slope = np.mean(ema20_slope[-3:])
+    if avg_slope < -0.5:  # Steep decline in EMA slope
+        ema_signal = 'bearish'
+        risk_score += 15
+        reasons.append(f"EMA20 slope turning negative (divergence warning)")
+    elif avg_slope > 0.5:
+        ema_signal = 'bullish'
+        risk_score -= 5
+    
+    # Price vs EMA20 Analysis (Support Break)
+    price_distance = current_price - current_ema20
+    if price_distance < 0 and abs(price_distance) > 0.5:  # Price breaks below EMA20
+        risk_score += 15
+        reasons.append(f"Price breaks below EMA20 (distance: {price_distance:.4f})")
+    
+    # ADX Level Check (Already in weak trend territory)
+    if current_adx < 20:
+        risk_score += 10
+        reasons.append(f"ADX below 20 (weak trend, {current_adx:.1f})")
+    elif current_adx < 25 and adx_trend == 'declining':
+        risk_score += 5
+    
+    # Consolidation Risk (Low volatility before crash)
+    atr_range = np.max(close_prices[-3:]) - np.min(close_prices[-3:])
+    if atr_range < 0.2:  # Very tight consolidation
+        risk_score += 10
+        reasons.append("Market in tight consolidation (breakout imminent)")
+    
+    # Normalize risk score
+    risk_score = max(0, min(100, risk_score))
+    
+    # Determine risk level
+    if risk_score >= 70:
+        risk_level = 'critical'
+        is_weakening = True
+    elif risk_score >= 50:
+        risk_level = 'high'
+        is_weakening = True
+    elif risk_score >= 35:
+        risk_level = 'moderate'
+        is_weakening = True
+    elif risk_score >= 20:
+        risk_level = 'low'
+        is_weakening = False
+    else:
+        risk_level = 'none'
+        is_weakening = False
+    
+    return {
+        'is_weakening': is_weakening,
+        'risk_level': risk_level,
+        'risk_score': int(risk_score),
+        'reasons': reasons,
+        'adx_trend': adx_trend,
+        'macd_trend': macd_trend,
+        'ema_signal': ema_signal,
+    }
+
 def get_trend_summary(feature_data):
     """Summarize current trend strength and whether it is weakening."""
     if feature_data is None or feature_data.empty:
@@ -26,6 +145,7 @@ def get_trend_summary(feature_data):
             'adx': None,
             'macd_hist': None,
             'trend_weakening': False,
+            'weakening_risk': detect_current_trend_weakening(None),
         }
 
     last_row = feature_data.iloc[-1]
@@ -51,12 +171,53 @@ def get_trend_summary(feature_data):
     else:
         signal = 'Trend is weak or sideways'
 
+    weakening_risk = detect_current_trend_weakening(feature_data)
+
     return {
         'trend_strength': strength,
         'trend_signal': signal,
         'adx': adx_value,
         'macd_hist': macd_hist_value,
         'trend_weakening': weakening,
+        'weakening_risk': weakening_risk,
+    }
+
+def _classify_outlook_from_row(row):
+    """Classify trend outlook from a forecasted feature row."""
+    adx_value = float(row['ADX']) if pd.notna(row['ADX']) else 20.0
+    macd_hist = float(row['MACD_HIST']) if pd.notna(row['MACD_HIST']) else 0.0
+    weakening = bool(row['TREND_WEAKENING'])
+
+    if weakening:
+        return 'likely_weakening'
+    if adx_value >= 25 and macd_hist > 0:
+        return 'strengthening'
+    return 'stable'
+
+
+def analyze_trend_weakening_outlook(forecast_feature_data, checkpoint_days=(7, 14)):
+    """Analyze whether trend is likely to weaken at forecast checkpoints."""
+    if forecast_feature_data is None or forecast_feature_data.empty:
+        return {
+            'day7_outlook': 'unknown',
+            'day14_outlook': 'unknown',
+            'warning': None,
+        }
+
+    day7_index = min(checkpoint_days[0] - 1, len(forecast_feature_data) - 1)
+    day14_index = min(checkpoint_days[1] - 1, len(forecast_feature_data) - 1)
+    day7_outlook = _classify_outlook_from_row(forecast_feature_data.iloc[day7_index])
+    day14_outlook = _classify_outlook_from_row(forecast_feature_data.iloc[day14_index])
+
+    if day14_outlook == 'likely_weakening' or day7_outlook == 'likely_weakening':
+        warning = '⚠️ ALERT: Trend shows signs of weakening over the next 14 days'
+    else:
+        warning = None
+
+    return {
+        'day7_outlook': day7_outlook,
+        'day14_outlook': day14_outlook,
+        'warning': warning,
     }
 
 def initialize_model():
@@ -124,8 +285,9 @@ def get_current_price():
         trend_summary = get_trend_summary(feature_data)
         
         if source_data is not None and not source_data.empty:
-            historical = source_data['Close'].tail(30).tolist()
-            dates = source_data.index.tail(30).strftime('%Y-%m-%d').tolist()
+            recent_data = source_data.tail(30)
+            historical = recent_data['Close'].tolist()
+            dates = recent_data.index.strftime('%Y-%m-%d').tolist()
         else:
             historical = []
             dates = []
@@ -144,7 +306,7 @@ def get_current_price():
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
-    """Predict EUR/JPY prices for week 1 and week 2 ahead"""
+    """Predict EUR/JPY prices for the next 14 days."""
     try:
         if model is None:
             return jsonify({'success': False, 'error': 'Model not loaded'}), 500
@@ -167,8 +329,8 @@ def predict():
         scaled_features = scraper.transform_feature_frame(feature_data)
         
         # Prepare sequence and forecast horizon (always keep at least 2 for UI)
-        horizon_weeks = int(PREDICTION_CONFIG.get('forecast_weeks', 2))
-        horizon_weeks = max(2, horizon_weeks)
+        horizon_days = int(PREDICTION_CONFIG.get('forecast_days', PREDICTION_CONFIG.get('forecast_weeks', 2)))
+        horizon_days = max(2, horizon_days)
         sequence = scaled_features[-lookback:].copy()
 
         # Iterative multi-step forecast: each predicted step feeds the next step
@@ -180,12 +342,12 @@ def predict():
         trend_weakening_series = feature_data['TREND_WEAKENING'].copy()
         last_date = pd.to_datetime(feature_data.index[-1])
 
-        for _ in range(horizon_weeks):
+        for _ in range(horizon_days):
             step_pred = model.predict(sequence.reshape(1, lookback, sequence.shape[1]), verbose=0)[0][0]
             predicted_scaled_values.append(step_pred)
 
             predicted_close = scraper.inverse_transform_close([step_pred])[0]
-            next_date = last_date + pd.Timedelta(days=7)
+            next_date = last_date + pd.Timedelta(days=1)
 
             new_close_series = pd.concat([feature_data['Close'], pd.Series([predicted_close], index=[next_date])])
             new_ema10 = new_close_series.ewm(span=10, adjust=False).mean().iloc[-1]
@@ -249,31 +411,52 @@ def predict():
             last_date = next_date
 
         predicted_prices = scraper.inverse_transform_close(predicted_scaled_values)
-        week1_price = float(predicted_prices[0])
-        week2_price = float(predicted_prices[1])
+        forecast_dates = [(pd.to_datetime(data.index[-1]) + pd.Timedelta(days=step + 1)).strftime('%Y-%m-%d') for step in range(horizon_days)]
+        forecast_prices = [float(price) for price in predicted_prices]
+        forecast_feature_data = feature_data.tail(horizon_days).copy()
+
+        day7_index = min(6, len(forecast_prices) - 1)
+        day14_index = min(13, len(forecast_prices) - 1)
+        day7_price = forecast_prices[day7_index]
+        day14_price = forecast_prices[day14_index]
         
         current_price = float(data['Close'].iloc[-1])
-        week1_change = ((week1_price - current_price) / current_price) * 100
-        week2_change = ((week2_price - current_price) / current_price) * 100
+        day7_change = ((day7_price - current_price) / current_price) * 100
+        day14_change = ((day14_price - current_price) / current_price) * 100
 
-        base_date = pd.to_datetime(data.index[-1])
-        week1_date = (base_date + pd.Timedelta(days=7)).strftime('%Y-%m-%d')
-        week2_date = (base_date + pd.Timedelta(days=14)).strftime('%Y-%m-%d')
+        day7_date = forecast_dates[day7_index]
+        day14_date = forecast_dates[day14_index]
         trend_summary = get_trend_summary(scraper.engineer_features(data))
+        trend_outlook = analyze_trend_weakening_outlook(forecast_feature_data, checkpoint_days=(7, 14))
         
         return jsonify({
             'success': True,
             'current_price': float(current_price),
-            'week1_date': week1_date,
-            'week2_date': week2_date,
-            'week1_predicted_price': week1_price,
-            'week2_predicted_price': week2_price,
-            'predicted_price': week2_price,
+            'forecast_dates': forecast_dates,
+            'forecast_prices': forecast_prices,
+            'day7_date': day7_date,
+            'day14_date': day14_date,
+            'day7_predicted_price': day7_price,
+            'day14_predicted_price': day14_price,
+            'predicted_price': day14_price,
+            'prediction_horizon_days': horizon_days,
+            'day7_change': float(day7_change),
+            'day14_change': float(day14_change),
+            'change': float(day14_change),
+            'change_direction': 'up' if day14_change > 0 else 'down',
+            'day7_outlook': trend_outlook['day7_outlook'],
+            'day14_outlook': trend_outlook['day14_outlook'],
+            'trend_warning': trend_outlook['warning'],
+            # Compatibility aliases mapped to 1-week and 2-week checkpoints
+            'week1_date': day7_date,
+            'week2_date': day14_date,
+            'week1_predicted_price': day7_price,
+            'week2_predicted_price': day14_price,
             'prediction_horizon_weeks': 2,
-            'week1_change': float(week1_change),
-            'week2_change': float(week2_change),
-            'change': float(week2_change),
-            'change_direction': 'up' if week2_change > 0 else 'down',
+            'week1_change': float(day7_change),
+            'week2_change': float(day14_change),
+            'week1_outlook': trend_outlook['day7_outlook'],
+            'week2_outlook': trend_outlook['day14_outlook'],
             **trend_summary,
         })
     except Exception as e:
@@ -292,9 +475,9 @@ def get_model_info():
             'layers': 'LSTM(50) -> Dropout -> LSTM(50) -> Dropout -> LSTM(50) -> Dense',
             'optimization': 'Adam (lr=0.001)',
             'loss_function': 'Mean Squared Error',
-            'training_data': '10 years of EUR/JPY weekly data',
+            'training_data': '10 years of EUR/JPY daily data',
             'data_source': 'Local CSV file',
-            'prediction_horizon_weeks': int(PREDICTION_CONFIG.get('forecast_weeks', 2)),
+            'prediction_horizon_days': int(PREDICTION_CONFIG.get('forecast_days', PREDICTION_CONFIG.get('forecast_weeks', 2))),
             'engineered_features': ', '.join(feature_columns) if feature_columns else 'Close only',
         })
     except Exception as e:

@@ -6,6 +6,8 @@
     <title>EUR/JPY LSTM Predictor</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
         * {
             margin: 0;
             padding: 0;
@@ -13,113 +15,290 @@
         }
         
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+            background:
+                radial-gradient(circle at top left, rgba(255, 196, 112, 0.38), transparent 28%),
+                radial-gradient(circle at top right, rgba(33, 158, 188, 0.22), transparent 26%),
+                linear-gradient(145deg, #f6f1e7 0%, #f2ebe0 38%, #e8f0ef 100%);
             min-height: 100vh;
-            padding: 20px;
-            color: #333;
+            padding: 28px;
+            color: #1f2933;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        body::before,
+        body::after {
+            content: '';
+            position: fixed;
+            inset: auto;
+            width: 380px;
+            height: 380px;
+            border-radius: 50%;
+            filter: blur(70px);
+            opacity: 0.42;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        body::before {
+            top: -110px;
+            left: -90px;
+            background: rgba(238, 155, 0, 0.34);
+        }
+
+        body::after {
+            right: -120px;
+            bottom: -100px;
+            background: rgba(10, 147, 150, 0.22);
         }
         
         .container {
-            max-width: 1200px;
+            max-width: 1280px;
             margin: 0 auto;
+            position: relative;
+            z-index: 1;
         }
         
         header {
-            text-align: center;
-            color: white;
-            margin-bottom: 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            gap: 24px;
+            margin-bottom: 34px;
+            padding: 26px 28px;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 28px;
+            background: rgba(255, 252, 246, 0.78);
+            box-shadow: 0 24px 70px rgba(15, 23, 42, 0.10);
+            backdrop-filter: blur(14px);
             animation: slideDown 0.6s ease-out;
         }
         
+        .hero-copy {
+            max-width: 760px;
+        }
+
+        .hero-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 14px;
+            margin-bottom: 16px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(10, 147, 150, 0.14), rgba(238, 155, 0, 0.16));
+            color: #0a5c61;
+            font-size: 0.82em;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
         header h1 {
-            font-size: 2.5em;
+            font-family: 'Fraunces', Georgia, serif;
+            font-size: clamp(2.4rem, 4vw, 4rem);
+            line-height: 1.02;
             margin-bottom: 10px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+            color: #14213d;
         }
         
         header p {
-            font-size: 1.1em;
-            opacity: 0.9;
+            max-width: 620px;
+            font-size: 1.03em;
+            line-height: 1.6;
+            color: #52606d;
+        }
+
+        .hero-sidekick {
+            min-width: 250px;
+            padding: 18px 20px;
+            border-radius: 22px;
+            background: linear-gradient(160deg, #16324f 0%, #1f5f74 100%);
+            color: #f8fafc;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        .hero-sidekick-label {
+            font-size: 0.74em;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            opacity: 0.72;
+            margin-bottom: 10px;
+        }
+
+        .hero-sidekick-value {
+            font-family: 'Fraunces', Georgia, serif;
+            font-size: 1.7em;
+            margin-bottom: 8px;
+        }
+
+        .hero-sidekick-copy {
+            font-size: 0.93em;
+            line-height: 1.5;
+            color: rgba(248, 250, 252, 0.82);
         }
         
         .main-content {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 30px;
+            gap: 24px;
             margin-bottom: 30px;
         }
         
         .card {
-            background: white;
-            border-radius: 10px;
+            background: rgba(255, 252, 248, 0.88);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 28px;
             padding: 30px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            box-shadow: 0 22px 60px rgba(15, 23, 42, 0.08);
+            transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+            backdrop-filter: blur(16px);
         }
         
         .card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 50px rgba(0,0,0,0.3);
+            transform: translateY(-4px);
+            border-color: rgba(10, 147, 150, 0.22);
+            box-shadow: 0 28px 70px rgba(15, 23, 42, 0.12);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .card-header h2 {
+            font-family: 'Fraunces', Georgia, serif;
+            font-size: 1.65em;
+            color: #14213d;
+            margin-bottom: 6px;
+        }
+
+        .card-header p {
+            color: #6b7280;
+            font-size: 0.95em;
+            line-height: 1.5;
+        }
+
+        .section-chip {
+            flex-shrink: 0;
+            padding: 9px 12px;
+            border-radius: 14px;
+            background: #fff5da;
+            color: #9a6700;
+            font-size: 0.78em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
         }
         
         .price-display {
-            display: flex;
-            justify-content: space-between;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .action-row {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            gap: 14px;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #f0f0f0;
+            margin-bottom: 18px;
+        }
+
+        .insight-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 14px;
+            margin-top: 8px;
+        }
+
+        .panel-title {
+            font-size: 0.8em;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #5f6c7b;
+            margin-bottom: 10px;
+            font-weight: 700;
         }
         
         .price-item {
-            text-align: center;
+            padding: 18px;
+            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(242, 247, 247, 0.92));
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            text-align: left;
+            min-height: 110px;
         }
         
         .price-label {
-            color: #999;
+            color: #52606d;
             font-size: 0.9em;
-            margin-bottom: 5px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 700;
         }
         
         .price-value {
-            font-size: 2em;
+            font-family: 'Fraunces', Georgia, serif;
+            font-size: clamp(1.8rem, 3vw, 2.6rem);
             font-weight: bold;
-            color: #667eea;
+            color: #143d59;
         }
         
         .change-indicator {
-            font-size: 1.2em;
-            padding: 10px 15px;
-            border-radius: 5px;
+            font-size: 1.05em;
+            padding: 14px 18px;
+            border-radius: 16px;
             font-weight: bold;
+            margin-bottom: 18px;
+            border: 1px solid transparent;
         }
         
         .change-up {
-            background: #d4edda;
-            color: #155724;
+            background: #e7f7ee;
+            color: #0f6b3d;
+            border-color: rgba(15, 107, 61, 0.15);
         }
         
         .change-down {
-            background: #f8d7da;
-            color: #721c24;
+            background: #fff1ec;
+            color: #b54708;
+            border-color: rgba(181, 71, 8, 0.14);
         }
         
         .predict-btn {
             width: 100%;
-            padding: 15px;
+            padding: 16px;
             font-size: 1.1em;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0a9396 0%, #005f73 45%, #001219 100%);
             color: white;
             border: none;
-            border-radius: 5px;
+            border-radius: 18px;
             cursor: pointer;
             font-weight: bold;
-            transition: opacity 0.3s ease;
+            letter-spacing: 0.02em;
+            box-shadow: 0 18px 32px rgba(0, 95, 115, 0.28);
+            transition: transform 0.2s ease, opacity 0.3s ease, box-shadow 0.2s ease;
         }
         
         .predict-btn:hover {
-            opacity: 0.9;
+            opacity: 0.96;
+            transform: translateY(-2px);
+            box-shadow: 0 22px 38px rgba(0, 95, 115, 0.32);
+        }
+
+        .predict-hint {
+            font-size: 0.86em;
+            color: #5f6c7b;
+            background: rgba(255, 255, 255, 0.84);
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 14px;
+            padding: 12px 14px;
         }
         
         .predict-btn:disabled {
@@ -155,28 +334,217 @@
         }
         
         .model-info {
-            background: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
+            background: linear-gradient(180deg, rgba(244, 247, 246, 0.95), rgba(255, 255, 255, 0.94));
+            padding: 18px;
+            border-radius: 20px;
             margin-top: 20px;
             font-size: 0.9em;
+            border: 1px solid rgba(15, 23, 42, 0.06);
         }
         
         .model-info h4 {
-            color: #667eea;
-            margin-bottom: 10px;
+            color: #0f4c5c;
+            margin-bottom: 12px;
+            font-size: 1em;
         }
         
         .model-info-item {
             display: flex;
             justify-content: space-between;
-            padding: 5px 0;
-            border-bottom: 1px solid #e0e0e0;
+            gap: 14px;
+            padding: 9px 0;
+            border-bottom: 1px solid rgba(15, 23, 42, 0.08);
         }
         
         .model-info-item:last-child {
             border-bottom: none;
         }
+
+        .model-info.compact {
+            margin-top: 0;
+            height: 100%;
+        }
+
+        .trend-outlook {
+            background: linear-gradient(135deg, #fff4db 0%, #fffaf0 100%);
+            border: 1px solid rgba(234, 179, 8, 0.18);
+            border-left: 6px solid #e9a209;
+            padding: 18px;
+            border-radius: 20px;
+            margin-top: 15px;
+            margin-bottom: 15px;
+        }
+
+        .trend-outlook.compact {
+            margin: 0;
+            height: 100%;
+        }
+
+        .trend-outlook h4 {
+            color: #7c4f00;
+            margin-bottom: 12px;
+        }
+
+        .outlook-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-weight: 500;
+            border-bottom: 1px dashed rgba(124, 79, 0, 0.16);
+        }
+
+        .outlook-item:last-of-type {
+            border-bottom: none;
+        }
+
+        .outlook-weakening {
+            color: #d32f2f;
+            font-weight: bold;
+        }
+
+        .outlook-stable {
+            color: #f57c00;
+            font-weight: bold;
+        }
+
+        .outlook-strengthening {
+            color: #388e3c;
+            font-weight: bold;
+        }
+
+        .warning-alert {
+            background: #ffebee;
+            border-left: 4px solid #d32f2f;
+            padding: 12px;
+            border-radius: 14px;
+            margin-top: 10px;
+            color: #b71c1c;
+            font-weight: bold;
+            display: none;
+        }
+
+        .warning-alert.show {
+            display: block;
+        }
+
+        .risk-meter {
+            background: linear-gradient(180deg, #f7fafb, #eef4f3);
+            border-radius: 20px;
+            padding: 20px;
+            margin: 15px 0;
+            border: 1px solid rgba(15, 23, 42, 0.06);
+            border-left: 6px solid #0a9396;
+        }
+
+        .risk-meter.compact {
+            margin: 14px 0 0;
+        }
+
+        .risk-meter h4 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.1em;
+        }
+
+        .risk-bar {
+            width: 100%;
+            height: 30px;
+            background: rgba(15, 23, 42, 0.08);
+            border-radius: 15px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            position: relative;
+        }
+
+        .risk-bar-fill {
+            height: 100%;
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.85em;
+            transition: width 0.3s ease;
+        }
+
+        .risk-critical {
+            background: linear-gradient(90deg, #d32f2f 0%, #c62828 100%);
+            border-left: 5px solid #d32f2f;
+        }
+
+        .risk-high {
+            background: linear-gradient(90deg, #f57c00 0%, #e65100 100%);
+            border-left: 5px solid #f57c00;
+        }
+
+        .risk-moderate {
+            background: linear-gradient(90deg, #fbc02d 0%, #f9a825 100%);
+            border-left: 5px solid #fbc02d;
+        }
+
+        .risk-low {
+            background: linear-gradient(90deg, #7cb342 0%, #689f38 100%);
+            border-left: 5px solid #7cb342;
+        }
+
+        .risk-none {
+            background: linear-gradient(90deg, #388e3c 0%, #2e7d32 100%);
+            border-left: 5px solid #388e3c;
+        }
+
+        .risk-meter-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .risk-detail-item {
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            border-left: 3px solid #667eea;
+        }
+
+        .risk-detail-item strong {
+            display: block;
+            color: #667eea;
+            margin-bottom: 3px;
+        }
+
+        .risk-reasons {
+            background: white;
+            padding: 12px;
+            border-radius: 5px;
+            margin-top: 10px;
+            border-left: 3px solid #f57c00;
+        }
+
+        .risk-reasons h5 {
+            color: #f57c00;
+            margin-bottom: 8px;
+            font-size: 0.9em;
+        }
+
+        .risk-reason-item {
+            padding: 5px 0;
+            font-size: 0.85em;
+            color: #555;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .risk-reason-item:last-child {
+            border-bottom: none;
+        }
+
+        .risk-reason-item:before {
+            content: "⚠ ";
+            color: #f57c00;
+            font-weight: bold;
+        }
+        
         
         .full-width {
             grid-column: 1 / -1;
@@ -185,6 +553,10 @@
         .chart-container {
             position: relative;
             height: 400px;
+            padding: 8px;
+            border-radius: 22px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(246,248,248,0.92));
+            border: 1px solid rgba(15, 23, 42, 0.06);
         }
         
         .error-message {
@@ -214,25 +586,47 @@
         .controls select,
         .controls button {
             padding: 10px 15px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            background: white;
+            border: 1px solid rgba(15, 23, 42, 0.08);
+            border-radius: 14px;
+            background: rgba(255,255,255,0.92);
             cursor: pointer;
             font-size: 0.9em;
+            font-family: inherit;
         }
         
         .controls button {
-            background: #667eea;
+            background: #0a9396;
             color: white;
             border: none;
         }
         
         .controls button:hover {
-            background: #764ba2;
+            background: #0b7285;
         }
         
         @media (max-width: 768px) {
+            body {
+                padding: 16px;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
             .main-content {
+                grid-template-columns: 1fr;
+            }
+
+            .price-display {
+                grid-template-columns: 1fr;
+            }
+
+            .insight-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .action-row {
                 grid-template-columns: 1fr;
             }
             
@@ -241,8 +635,11 @@
             }
             
             .price-display {
-                flex-direction: column;
-                align-items: flex-start;
+                gap: 12px;
+            }
+
+            .risk-meter-details {
+                grid-template-columns: 1fr;
             }
         }
     </style>
@@ -250,8 +647,16 @@
 <body>
     <div class="container">
         <header>
-            <h1>🏦 EUR/JPY Price Predictor</h1>
-            <p>LSTM Neural Network Powered Forex Prediction</p>
+            <div class="hero-copy">
+                <div class="hero-badge">Daily model · 14-day horizon · trend risk tracking</div>
+                <h1>EUR/JPY Forecast Studio</h1>
+                <p>Track current momentum, weakening risk, and a 14-day forward projection from your locally trained LSTM model in one place.</p>
+            </div>
+            <div class="hero-sidekick">
+                <div class="hero-sidekick-label">Signal Lens</div>
+                <div class="hero-sidekick-value">Trend + Forecast</div>
+                <div class="hero-sidekick-copy">Current strength, weakening clues, and one-week/two-week checkpoints presented side by side.</div>
+            </div>
         </header>
         
         <div class="error-message" id="errorMsg"></div>
@@ -260,7 +665,13 @@
         <div class="main-content">
             <!-- Price Section -->
             <div class="card">
-                <h2>Current Price & Prediction</h2>
+                <div class="card-header">
+                    <div>
+                        <h2>Current Price & Projection</h2>
+                        <p>Use the latest EUR/JPY close to compare current market state against the 7-day and 14-day model checkpoints.</p>
+                    </div>
+                    <div class="section-chip">Forecast Board</div>
+                </div>
                 
                 <div class="price-display">
                     <div class="price-item">
@@ -268,44 +679,97 @@
                         <div class="price-value" id="currentPrice">--</div>
                     </div>
                     <div class="price-item">
-                        <div class="price-label" id="predictedPriceLabel">Week 1 Prediction</div>
-                        <div class="price-value" id="predictedPriceWeek1">--</div>
+                        <div class="price-label" id="predictedPriceLabel">7-Day Prediction</div>
+                        <div class="price-value" id="predictedPriceDay7">--</div>
                     </div>
                     <div class="price-item">
-                        <div class="price-label">Week 2 Prediction</div>
-                        <div class="price-value" id="predictedPriceWeek2">--</div>
+                        <div class="price-label">14-Day Prediction</div>
+                        <div class="price-value" id="predictedPriceDay14">--</div>
                     </div>
                 </div>
                 
-                <div id="changeIndicator" class="change-indicator" style="display: none;">
-                    <span id="changeValue">--</span>
+                <div class="action-row">
+                    <div id="changeIndicator" class="change-indicator" style="display: none; margin: 0;">
+                        <span id="changeValue">--</span>
+                    </div>
+                    <div class="predict-hint">Run forecast to update 7-day and 14-day checkpoints</div>
                 </div>
 
-                <div class="model-info" style="margin-top: 20px;">
-                    <h4>Trend Strength Signal</h4>
-                    <div class="model-info-item">
-                        <strong>Signal</strong>
-                        <span id="trendSignal">Loading...</span>
-                    </div>
-                    <div class="model-info-item">
-                        <strong>Strength</strong>
-                        <span id="trendStrength">--</span>
-                    </div>
-                    <div class="model-info-item">
-                        <strong>ADX</strong>
-                        <span id="trendAdx">--</span>
-                    </div>
-                    <div class="model-info-item">
-                        <strong>MACD Hist</strong>
-                        <span id="trendMacd">--</span>
-                    </div>
-                </div>
-                
                 <button class="predict-btn" onclick="makePrediction()">
                     Make Prediction
                 </button>
+
+                <div class="insight-grid">
+                    <div class="model-info compact" style="margin-top: 16px;">
+                        <div class="panel-title">Current Signal</div>
+                        <h4>Trend Strength Signal</h4>
+                        <div class="model-info-item">
+                            <strong>Signal</strong>
+                            <span id="trendSignal">Loading...</span>
+                        </div>
+                        <div class="model-info-item">
+                            <strong>Strength</strong>
+                            <span id="trendStrength">--</span>
+                        </div>
+                        <div class="model-info-item">
+                            <strong>ADX</strong>
+                            <span id="trendAdx">--</span>
+                        </div>
+                        <div class="model-info-item">
+                            <strong>MACD Hist</strong>
+                            <span id="trendMacd">--</span>
+                        </div>
+                    </div>
+
+                    <div class="trend-outlook compact" style="margin-top: 16px;">
+                        <div class="panel-title">Checkpoint Outlook</div>
+                        <h4>📊 Trend Weakening Outlook</h4>
+                        <div class="outlook-item">
+                            <strong>7-Day Forecast:</strong>
+                            <span id="day7Outlook" class="outlook-stable">--</span>
+                        </div>
+                        <div class="outlook-item">
+                            <strong>14-Day Forecast:</strong>
+                            <span id="day14Outlook" class="outlook-stable">--</span>
+                        </div>
+                        <div class="warning-alert" id="trendWarning"></div>
+                    </div>
+                </div>
+
+                <div class="risk-meter compact" id="riskMeterContainer">
+                    <div class="panel-title">Risk Scanner</div>
+                    <h4>🔴 CURRENT TREND WEAKENING RISK</h4>
+                    <div class="risk-bar">
+                        <div class="risk-bar-fill" id="riskBarFill" style="width: 0%;">
+                            <span id="riskScoreDisplay">0%</span>
+                        </div>
+                    </div>
+                    <div class="risk-meter-details">
+                        <div class="risk-detail-item">
+                            <strong>Risk Level:</strong>
+                            <span id="riskLevel">--</span>
+                        </div>
+                        <div class="risk-detail-item">
+                            <strong>ADX Trend:</strong>
+                            <span id="riskAdxTrend">--</span>
+                        </div>
+                        <div class="risk-detail-item">
+                            <strong>MACD Trend:</strong>
+                            <span id="riskMacdTrend">--</span>
+                        </div>
+                        <div class="risk-detail-item">
+                            <strong>EMA Signal:</strong>
+                            <span id="riskEmaSignal">--</span>
+                        </div>
+                    </div>
+                    <div class="risk-reasons" id="riskReasonsContainer" style="display: none;">
+                        <h5>Why the trend is weakening:</h5>
+                        <div id="riskReasonsList"></div>
+                    </div>
+                </div>
                 
                 <div class="model-info">
+                    <div class="panel-title">Model Metadata</div>
                     <h4>Model Information</h4>
                     <div id="modelInfoContainer">
                         <p>Loading model info...</p>
@@ -315,7 +779,13 @@
             
             <!-- Historical Chart -->
             <div class="card">
-                <h2>Historical Prices (30 Days)</h2>
+                <div class="card-header">
+                    <div>
+                        <h2>Quick View</h2>
+                        <p>Recent price action with the live forecast overlay for short-range context.</p>
+                    </div>
+                    <div class="section-chip">30 Days</div>
+                </div>
                 <div class="chart-container">
                     <canvas id="priceChart"></canvas>
                 </div>
@@ -323,7 +793,13 @@
             
             <!-- Advanced Chart -->
             <div class="card full-width">
-                <h2>Extended Historical Data</h2>
+                <div class="card-header">
+                    <div>
+                        <h2>Extended Historical Data</h2>
+                        <p>Scan broader context, switch horizons, and compare the actual series against the projected 14-day path.</p>
+                    </div>
+                    <div class="section-chip">Explorer</div>
+                </div>
                 <div class="controls">
                     <select id="timeframeSelect">
                         <option value="30">30 Days</option>
@@ -387,8 +863,10 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('predictedPriceWeek1').textContent = data.week1_predicted_price.toFixed(4);
-                    document.getElementById('predictedPriceWeek2').textContent = data.week2_predicted_price.toFixed(4);
+                    const day7Price = data.day7_predicted_price ?? data.week1_predicted_price;
+                    const day14Price = data.day14_predicted_price ?? data.week2_predicted_price;
+                    document.getElementById('predictedPriceDay7').textContent = day7Price.toFixed(4);
+                    document.getElementById('predictedPriceDay14').textContent = day14Price.toFixed(4);
                     updateTrendSignal(data);
                     lastPrediction = data;
                     applyPredictionToCharts(data);
@@ -401,7 +879,7 @@
                     changeDiv.className = 'change-indicator ' + (data.change_direction === 'up' ? 'change-up' : 'change-down');
                     changeDiv.style.display = 'block';
                     
-                    showSuccess('Prediction made successfully for week 1 and week 2!');
+                    showSuccess('Prediction made successfully for the next 14 days.');
                 } else {
                     showError('Prediction failed: ' + data.error);
                 }
@@ -439,6 +917,80 @@
                 document.getElementById('trendStrength').textContent = data.trend_strength || '--';
                 document.getElementById('trendAdx').textContent = data.adx == null ? '--' : data.adx.toFixed(2);
                 document.getElementById('trendMacd').textContent = data.macd_hist == null ? '--' : data.macd_hist.toFixed(4);
+                
+                // Update trend outlook
+                const day7Outlook = data.day7_outlook || data.week1_outlook;
+                if (day7Outlook) {
+                    const day7Element = document.getElementById('day7Outlook');
+                    day7Element.textContent = formatOutlook(day7Outlook);
+                    day7Element.className = 'outlook-' + day7Outlook;
+                }
+                
+                const day14Outlook = data.day14_outlook || data.week2_outlook;
+                if (day14Outlook) {
+                    const day14Element = document.getElementById('day14Outlook');
+                    day14Element.textContent = formatOutlook(day14Outlook);
+                    day14Element.className = 'outlook-' + day14Outlook;
+                }
+                
+                // Update warning alert
+                const warningDiv = document.getElementById('trendWarning');
+                if (data.trend_warning) {
+                    warningDiv.textContent = data.trend_warning;
+                    warningDiv.classList.add('show');
+                } else {
+                    warningDiv.classList.remove('show');
+                }
+
+                // Update current trend weakening risk meter
+                if (data.weakening_risk) {
+                    updateRiskMeter(data.weakening_risk);
+                }
+            }
+
+            function updateRiskMeter(riskData) {
+                const riskScore = riskData.risk_score || 0;
+                const riskLevel = riskData.risk_level || 'none';
+                const reasons = riskData.reasons || [];
+                
+                // Update bar
+                const barFill = document.getElementById('riskBarFill');
+                barFill.style.width = riskScore + '%';
+                barFill.textContent = riskScore + '%';
+                barFill.className = 'risk-bar-fill risk-' + riskLevel;
+                
+                // Update risk level text
+                document.getElementById('riskLevel').textContent = riskLevel.toUpperCase();
+                document.getElementById('riskAdxTrend').textContent = (riskData.adx_trend || '--').toUpperCase();
+                document.getElementById('riskMacdTrend').textContent = (riskData.macd_trend || '--').toUpperCase();
+                document.getElementById('riskEmaSignal').textContent = (riskData.ema_signal || '--').toUpperCase();
+                
+                // Update risk reasons
+                const reasonsContainer = document.getElementById('riskReasonsContainer');
+                const reasonsList = document.getElementById('riskReasonsList');
+                
+                if (reasons.length > 0) {
+                    reasonsList.innerHTML = reasons.map(reason => 
+                        `<div class="risk-reason-item">${reason}</div>`
+                    ).join('');
+                    reasonsContainer.style.display = 'block';
+                } else {
+                    reasonsContainer.style.display = 'none';
+                }
+
+                // Update risk meter container color based on level
+                const container = document.getElementById('riskMeterContainer');
+                container.className = 'risk-meter risk-' + riskLevel;
+            }
+
+            function formatOutlook(outlook) {
+                const outlookMap = {
+                    'likely_weakening': '⚠️ Likely Weakening',
+                    'stable': '➡️ Stable',
+                    'strengthening': '📈 Strengthening',
+                    'unknown': '❓ Unknown'
+                };
+                return outlookMap[outlook] || outlook;
             }
         
         function updateHistoricalChart() {
@@ -470,7 +1022,7 @@
                                         fill: true
                                     },
                                     {
-                                        label: 'Forecast (Week 1 & Week 2)',
+                                        label: 'Forecast (Next 14 Days)',
                                         data: [],
                                         borderColor: '#ff7f50',
                                         backgroundColor: 'rgba(255, 127, 80, 0.12)',
@@ -512,25 +1064,23 @@
         }
 
         function applyPredictionToCharts(pred) {
-            const week1Date = pred.week1_date;
-            const week2Date = pred.week2_date;
-            const week1Price = pred.week1_predicted_price;
-            const week2Price = pred.week2_predicted_price;
+            const forecastDates = pred.forecast_dates || [pred.day7_date || pred.week1_date, pred.day14_date || pred.week2_date].filter(Boolean);
+            const forecastPrices = pred.forecast_prices || [pred.day7_predicted_price ?? pred.week1_predicted_price, pred.day14_predicted_price ?? pred.week2_predicted_price].filter(value => value != null);
 
             if (historicalChart && historicalChart.data.labels.length > 0) {
                 const labels = [...historicalChart.data.labels];
                 const closeData = historicalChart.data.datasets[0].data;
                 const lastActual = closeData[closeData.length - 1];
 
-                labels.push(week1Date, week2Date);
+                labels.push(...forecastDates);
                 historicalChart.data.labels = labels;
 
                 // Keep actual series aligned by padding future points with null
-                historicalChart.data.datasets[0].data = [...closeData, null, null];
+                historicalChart.data.datasets[0].data = [...closeData, ...new Array(forecastDates.length).fill(null)];
 
-                // Forecast series starts from last known point then extends to week1/week2
+                // Forecast series starts from last known point then extends across the forecast horizon
                 const forecastSeries = new Array(closeData.length - 1).fill(null);
-                forecastSeries.push(lastActual, week1Price, week2Price);
+                forecastSeries.push(lastActual, ...forecastPrices);
                 historicalChart.data.datasets[1].data = forecastSeries;
                 historicalChart.update();
             }
@@ -540,13 +1090,13 @@
                 const priceData = [...priceChart.data.datasets[0].data];
                 const lastActual = priceData[priceData.length - 1];
 
-                labels.push(week1Date, week2Date);
+                labels.push(...forecastDates);
                 priceChart.data.labels = labels;
-                priceChart.data.datasets[0].data = [...priceData, null, null];
+                priceChart.data.datasets[0].data = [...priceData, ...new Array(forecastDates.length).fill(null)];
 
                 if (!priceChart.data.datasets[1]) {
                     priceChart.data.datasets.push({
-                        label: 'Forecast (Week 1 & Week 2)',
+                        label: 'Forecast (Next 14 Days)',
                         data: [],
                         borderColor: '#ff7f50',
                         backgroundColor: 'rgba(255, 127, 80, 0.12)',
@@ -559,7 +1109,7 @@
                 }
 
                 const forecastSeries = new Array(priceData.length - 1).fill(null);
-                forecastSeries.push(lastActual, week1Price, week2Price);
+                forecastSeries.push(lastActual, ...forecastPrices);
                 priceChart.data.datasets[1].data = forecastSeries;
                 priceChart.update();
             }
