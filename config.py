@@ -18,6 +18,15 @@ MODEL_CONFIG = {
     'lstm_units': [50, 50, 50],  # Units in each LSTM layer
     'dropout_rate': 0.2,
     'dense_units': 25,
+    'model_type': 'lstm',
+    'lgbm_lag_count': 30,
+    'arima_max_p': 4,
+    'arima_max_d': 2,
+    'arima_max_q': 4,
+    'sarima_max_p': 2,
+    'sarima_max_d': 1,
+    'sarima_max_q': 2,
+    'sarima_period': 7,
     'model_name': 'lstm_eurjpy',
     'model_dir': 'models',
 }
@@ -31,6 +40,8 @@ TRAINING_CONFIG = {
     'learning_rate': 0.001,
     'loss_function': 'mse',
     'metrics': ['mae'],
+    'enable_tuning': True,
+    'tuning_trials': 8,
 }
 
 # Flask Configuration

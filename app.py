@@ -1,20 +1,52 @@
 from flask import Flask, render_template, request, jsonify
 import numpy as np
 import pandas as pd
-from tensorflow.keras.models import load_model
 import pickle
 import os
 from data_scraper import EURJPYDataScraper
-from config import DATA_CONFIG, PREDICTION_CONFIG
+from config import DATA_CONFIG, PREDICTION_CONFIG, MODEL_CONFIG
 import traceback
 
 app = Flask(__name__)
 
 # Global variables for model
 model = None
+model_type = 'unknown'
 lookback = 60
+lag_count = 30
+target_mode = 'next_return'
+arima_order = None
+model_family = 'arima'
+sarima_seasonal_order = None
 latest_data = None
 feature_columns = []
+
+
+def _build_lgbm_feature_row(history_data, engineered_data, lag_count_value):
+    """Build one-step feature row for LightGBM iterative forecasting."""
+    close_series = history_data['Close'].astype(float)
+    if len(close_series) < lag_count_value + 14:
+        raise ValueError('Not enough history for LightGBM feature generation.')
+
+    latest_features = engineered_data.iloc[-1]
+    feature_row = {}
+
+    for lag in range(1, lag_count_value + 1):
+        feature_row[f'close_lag_{lag}'] = float(close_series.iloc[-lag])
+
+    returns = close_series.pct_change().fillna(0.0)
+    for lag in range(1, 6):
+        feature_row[f'return_lag_{lag}'] = float(returns.iloc[-lag])
+
+    for window in [3, 7, 14]:
+        window_slice = close_series.iloc[-window:]
+        feature_row[f'roll_mean_{window}'] = float(window_slice.mean())
+        feature_row[f'roll_std_{window}'] = float(window_slice.std()) if len(window_slice) > 1 else 0.0
+
+    for col in ['EMA10', 'EMA20', 'EMA20_SLOPE', 'MACD_HIST', 'ADX', 'TREND_WEAKENING']:
+        feature_row[col] = float(latest_features[col])
+
+    return pd.DataFrame([feature_row])
 
 
 def detect_current_trend_weakening(feature_data):
@@ -222,25 +254,41 @@ def analyze_trend_weakening_outlook(forecast_feature_data, checkpoint_days=(7, 1
 
 def initialize_model():
     """Load trained model and initialize components"""
-    global model, lookback, latest_data, feature_columns
+    global model, model_type, lookback, lag_count, target_mode, arima_order, model_family, sarima_seasonal_order, latest_data, feature_columns
     
     try:
-        # Load model
-        model_path = 'models/lstm_eurjpy.h5'
-        if os.path.exists(model_path):
-            model = load_model(model_path)
-            print("Model loaded successfully")
-        else:
-            print(f"Model not found at {model_path}. Please train the model first.")
-            return False
-        
-        # Load parameters
-        params_path = 'models/lstm_eurjpy_params.pkl'
+        model_name = MODEL_CONFIG.get('model_name', 'lstm_eurjpy')
+        model_path_h5 = os.path.join('models', f'{model_name}.h5')
+        model_path_pkl = os.path.join('models', f'{model_name}.pkl')
+        params_path = os.path.join('models', f'{model_name}_params.pkl')
+
         if os.path.exists(params_path):
             with open(params_path, 'rb') as f:
                 params = pickle.load(f)
-                lookback = params['lookback']
+                model_type = params.get('model_type', 'lstm')
+                lookback = params.get('lookback', lookback)
+                lag_count = int(params.get('lag_count', lag_count))
+                target_mode = params.get('target_mode', target_mode)
+                arima_order = params.get('arima_order', arima_order)
+                model_family = params.get('model_family', model_family)
+                sarima_seasonal_order = params.get('sarima_seasonal_order', sarima_seasonal_order)
                 feature_columns = params.get('feature_columns', [])
+        else:
+            model_type = 'lstm'
+
+        if model_type in ['lightgbm', 'arima'] and os.path.exists(model_path_pkl):
+            with open(model_path_pkl, 'rb') as f:
+                model = pickle.load(f)
+            print(f"{model_type.upper()} model loaded successfully")
+        elif os.path.exists(model_path_h5):
+            from tensorflow.keras.models import load_model
+
+            model = load_model(model_path_h5)
+            model_type = 'lstm'
+            print('LSTM model loaded successfully')
+        else:
+            print(f"Model not found at {model_path_pkl} or {model_path_h5}. Please train the model first.")
+            return False
         
         # Fetch latest data
         update_latest_data()
@@ -322,98 +370,103 @@ def predict():
         feature_data = scraper.engineer_features(data)
         if feature_data is None or feature_data.empty:
             return jsonify({'success': False, 'error': 'Could not engineer prediction features'}), 500
-        if len(feature_data) <= lookback:
+        if model_type == 'lstm' and len(feature_data) <= lookback:
             return jsonify({'success': False, 'error': 'Not enough feature rows for prediction'}), 500
-
-        scraper.fit_feature_pipeline(feature_data)
-        scaled_features = scraper.transform_feature_frame(feature_data)
         
         # Prepare sequence and forecast horizon (always keep at least 2 for UI)
         horizon_days = int(PREDICTION_CONFIG.get('forecast_days', PREDICTION_CONFIG.get('forecast_weeks', 2)))
         horizon_days = max(2, horizon_days)
-        sequence = scaled_features[-lookback:].copy()
+        history_data = data.copy()
+        last_date = pd.to_datetime(history_data.index[-1])
+        predicted_prices = []
 
-        # Iterative multi-step forecast: each predicted step feeds the next step
-        predicted_scaled_values = []
-        ema10 = feature_data['EMA10'].copy()
-        ema20 = feature_data['EMA20'].copy()
-        adx_series = feature_data['ADX'].copy()
-        macd_hist_series = feature_data['MACD_HIST'].copy()
-        trend_weakening_series = feature_data['TREND_WEAKENING'].copy()
-        last_date = pd.to_datetime(feature_data.index[-1])
+        if model_type == 'arima':
+            forecast = model.get_forecast(steps=horizon_days)
+            predicted_prices = [float(v) for v in forecast.predicted_mean.tolist()]
 
-        for _ in range(horizon_days):
-            step_pred = model.predict(sequence.reshape(1, lookback, sequence.shape[1]), verbose=0)[0][0]
-            predicted_scaled_values.append(step_pred)
+            for predicted_close in predicted_prices:
+                next_date = last_date + pd.Timedelta(days=1)
+                history_data = pd.concat([
+                    history_data,
+                    pd.DataFrame(
+                        [{
+                            'Open': predicted_close,
+                            'High': predicted_close,
+                            'Low': predicted_close,
+                            'Close': predicted_close,
+                            'Volume': 0,
+                        }],
+                        index=[next_date],
+                    ),
+                ])
+                last_date = next_date
+        elif model_type == 'lightgbm':
+            for _ in range(horizon_days):
+                engineered = scraper.engineer_features(history_data)
+                if engineered is None or engineered.empty:
+                    return jsonify({'success': False, 'error': 'Could not build LightGBM feature frame'}), 500
 
-            predicted_close = scraper.inverse_transform_close([step_pred])[0]
-            next_date = last_date + pd.Timedelta(days=1)
+                feature_row = _build_lgbm_feature_row(history_data, engineered, lag_count)
+                if feature_columns:
+                    feature_row = feature_row.reindex(columns=feature_columns, fill_value=0.0)
 
-            new_close_series = pd.concat([feature_data['Close'], pd.Series([predicted_close], index=[next_date])])
-            new_ema10 = new_close_series.ewm(span=10, adjust=False).mean().iloc[-1]
-            new_ema20 = new_close_series.ewm(span=20, adjust=False).mean().iloc[-1]
-            new_ema20_slope = new_ema20 - ema20.iloc[-1]
+                raw_pred = float(model.predict(feature_row)[0])
+                if target_mode == 'next_return':
+                    raw_pred = float(np.clip(raw_pred, -0.05, 0.05))
+                    last_close = float(history_data['Close'].iloc[-1])
+                    predicted_close = last_close * (1.0 + raw_pred)
+                else:
+                    predicted_close = raw_pred
+                predicted_prices.append(predicted_close)
 
-            ema12 = new_close_series.ewm(span=12, adjust=False).mean().iloc[-1]
-            ema26 = new_close_series.ewm(span=26, adjust=False).mean().iloc[-1]
-            macd_value = ema12 - ema26
-            macd_series = new_close_series.ewm(span=12, adjust=False).mean() - new_close_series.ewm(span=26, adjust=False).mean()
-            macd_signal = macd_series.ewm(span=9, adjust=False).mean().iloc[-1]
-            new_macd_hist = macd_value - macd_signal
+                next_date = last_date + pd.Timedelta(days=1)
+                history_data = pd.concat([
+                    history_data,
+                    pd.DataFrame(
+                        [{
+                            'Open': predicted_close,
+                            'High': predicted_close,
+                            'Low': predicted_close,
+                            'Close': predicted_close,
+                            'Volume': 0,
+                        }],
+                        index=[next_date],
+                    ),
+                ])
+                last_date = next_date
+        else:
+            scraper.fit_feature_pipeline(feature_data)
+            scaled_features = scraper.transform_feature_frame(feature_data)
+            sequence = scaled_features[-lookback:].copy()
+            predicted_scaled_values = []
 
-            new_adx = adx_series.iloc[-1] if not adx_series.empty else 20.0
-            weakening = int(
-                len(adx_series) >= 2
-                and new_adx < adx_series.iloc[-1]
-                and adx_series.iloc[-1] < adx_series.iloc[-2]
-                and new_adx > 20
-                and new_macd_hist < macd_hist_series.iloc[-1]
-            )
+            for _ in range(horizon_days):
+                step_pred = model.predict(sequence.reshape(1, lookback, sequence.shape[1]), verbose=0)[0][0]
+                predicted_scaled_values.append(step_pred)
 
-            new_row = pd.DataFrame(
-                [{
-                    'Close': predicted_close,
-                    'EMA10': new_ema10,
-                    'EMA20': new_ema20,
-                    'EMA20_SLOPE': new_ema20_slope,
-                    'MACD_HIST': new_macd_hist,
-                    'ADX': new_adx,
-                    'TREND_WEAKENING': weakening,
-                }]
-            )
-            scaled_new_row = scraper.transform_feature_frame(new_row)[0]
-            sequence = np.vstack([sequence[1:], scaled_new_row])
+                predicted_close = scraper.inverse_transform_close([step_pred])[0]
+                next_date = last_date + pd.Timedelta(days=1)
 
-            feature_data = pd.concat([
-                feature_data,
-                pd.DataFrame(
+                new_row = pd.DataFrame(
                     [{
-                        'Open': predicted_close,
-                        'High': predicted_close,
-                        'Low': predicted_close,
                         'Close': predicted_close,
-                        'Volume': 0,
-                        'EMA10': new_ema10,
-                        'EMA20': new_ema20,
-                        'EMA20_SLOPE': new_ema20_slope,
-                        'MACD_HIST': new_macd_hist,
-                        'ADX': new_adx,
-                        'TREND_WEAKENING': weakening,
-                    }],
-                    index=[next_date],
-                ),
-            ])
-            ema10 = pd.concat([ema10, pd.Series([new_ema10], index=[next_date])])
-            ema20 = pd.concat([ema20, pd.Series([new_ema20], index=[next_date])])
-            adx_series = pd.concat([adx_series, pd.Series([new_adx], index=[next_date])])
-            macd_hist_series = pd.concat([macd_hist_series, pd.Series([new_macd_hist], index=[next_date])])
-            trend_weakening_series = pd.concat([trend_weakening_series, pd.Series([weakening], index=[next_date])])
-            last_date = next_date
+                        'EMA10': predicted_close,
+                        'EMA20': predicted_close,
+                        'EMA20_SLOPE': 0.0,
+                        'MACD_HIST': 0.0,
+                        'ADX': 20.0,
+                        'TREND_WEAKENING': 0,
+                    }]
+                )
+                scaled_new_row = scraper.transform_feature_frame(new_row)[0]
+                sequence = np.vstack([sequence[1:], scaled_new_row])
+                last_date = next_date
 
-        predicted_prices = scraper.inverse_transform_close(predicted_scaled_values)
+            predicted_prices = scraper.inverse_transform_close(predicted_scaled_values)
+
         forecast_dates = [(pd.to_datetime(data.index[-1]) + pd.Timedelta(days=step + 1)).strftime('%Y-%m-%d') for step in range(horizon_days)]
         forecast_prices = [float(price) for price in predicted_prices]
-        forecast_feature_data = feature_data.tail(horizon_days).copy()
+        forecast_feature_data = scraper.engineer_features(history_data).tail(horizon_days).copy()
 
         day7_index = min(6, len(forecast_prices) - 1)
         day14_index = min(13, len(forecast_prices) - 1)
@@ -530,11 +583,15 @@ def get_model_info():
     try:
         return jsonify({
             'success': True,
-            'model_type': 'LSTM (Long Short-Term Memory)',
+            'model_type': 'ARIMA' if model_type == 'arima' else ('LightGBM Regressor' if model_type == 'lightgbm' else 'LSTM (Long Short-Term Memory)'),
+            'model_family': model_family if model_type == 'arima' else None,
             'lookback_days': lookback,
-            'layers': 'LSTM(50) -> Dropout -> LSTM(50) -> Dropout -> LSTM(50) -> Dense',
-            'optimization': 'Adam (lr=0.001)',
-            'loss_function': 'Mean Squared Error',
+            'lag_count': lag_count if model_type == 'lightgbm' else None,
+            'arima_order': arima_order if model_type == 'arima' else None,
+            'sarima_seasonal_order': sarima_seasonal_order if model_type == 'arima' else None,
+            'layers': 'ARIMA statistical model' if model_type == 'arima' else ('Gradient boosting trees' if model_type == 'lightgbm' else 'LSTM recurrent layers with dense head'),
+            'optimization': ('AIC tuning + holdout RMSE model selection' if model_type == 'arima' else ('RandomizedSearchCV + TimeSeriesSplit' if model_type == 'lightgbm' else 'Adam (lr=0.001)')),
+            'loss_function': 'MSE (regression)',
             'training_data': '10 years of EUR/JPY daily data',
             'data_source': 'Local CSV file',
             'prediction_horizon_days': int(PREDICTION_CONFIG.get('forecast_days', PREDICTION_CONFIG.get('forecast_weeks', 2))),
