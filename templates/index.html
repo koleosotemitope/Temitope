@@ -270,6 +270,61 @@
             color: #b54708;
             border-color: rgba(181, 71, 8, 0.14);
         }
+
+        .overall-signal {
+            margin-top: 16px;
+            padding: 14px;
+            border-radius: 18px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(245, 250, 250, 0.94));
+            border: 1px solid rgba(15, 23, 42, 0.08);
+        }
+
+        .overall-signal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .overall-signal-btn {
+            padding: 10px 14px;
+            border: none;
+            border-radius: 12px;
+            color: #ffffff;
+            font-weight: 700;
+            font-size: 0.86em;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            cursor: pointer;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        .overall-signal-btn:hover {
+            transform: translateY(-1px);
+            opacity: 0.95;
+        }
+
+        .overall-signal-btn.buy {
+            background: linear-gradient(135deg, #1f9d55, #10783f);
+            box-shadow: 0 8px 18px rgba(16, 120, 63, 0.25);
+        }
+
+        .overall-signal-btn.sell {
+            background: linear-gradient(135deg, #d94841, #b02a37);
+            box-shadow: 0 8px 18px rgba(176, 42, 55, 0.25);
+        }
+
+        .overall-signal-btn.hold {
+            background: linear-gradient(135deg, #a06b00, #7c5500);
+            box-shadow: 0 8px 18px rgba(124, 85, 0, 0.25);
+        }
+
+        .overall-signal-summary {
+            font-size: 0.9em;
+            color: #52606d;
+            line-height: 1.5;
+        }
         
         .predict-btn {
             width: 100%;
@@ -699,6 +754,19 @@
                     Make Prediction
                 </button>
 
+                <div class="overall-signal">
+                    <div class="overall-signal-header">
+                        <div class="panel-title" style="margin-bottom: 0;">Consensus Signal</div>
+                        <button class="overall-signal-btn hold" id="overallSignalBtn" onclick="updateOverallSignal()">Hold</button>
+                    </div>
+                    <div class="overall-signal-summary" id="overallSignalSummary">
+                        Click "Compute Overall Signal" after running both model forecasts.
+                    </div>
+                    <button class="predict-btn" id="overallSignalComputeBtn" onclick="computeOverallSignalFromAll()" style="margin-top: 12px; padding: 12px; font-size: 0.95em;">
+                        Compute Overall Signal
+                    </button>
+                </div>
+
                 <div class="insight-grid">
                     <div class="model-info compact" style="margin-top: 16px;">
                         <div class="panel-title">Current Signal</div>
@@ -887,6 +955,7 @@
         let historicalChart = null;
         let prophetChart = null;
         let lastPrediction = null;
+        let lastProphetPrediction = null;
         
         // Initialize
         window.addEventListener('load', function() {
@@ -942,6 +1011,7 @@
                     updateTrendSignal(data);
                     lastPrediction = data;
                     applyPredictionToCharts(data);
+                    updateOverallSignal();
                     
                     const changeDiv = document.getElementById('changeIndicator');
                     const changeValue = document.getElementById('changeValue');
@@ -1227,12 +1297,161 @@
                     data.forecast_lower[d14i].toFixed(4) + ' / ' + data.forecast_upper[d14i].toFixed(4);
 
                 renderProphetChart(data);
+                lastProphetPrediction = data;
+                updateOverallSignal();
                 showSuccess('Prophet forecast complete — 14-day projection ready.');
             })
             .catch(err => showError('Prophet error: ' + err))
             .finally(() => {
                 btn.disabled = false;
                 btn.innerHTML = 'Run Prophet Forecast';
+            });
+        }
+
+        function classifySignal(changePct, options = {}) {
+            const outlook = options.outlook || 'unknown';
+            const riskLevel = options.riskLevel || 'none';
+
+            let score = 0;
+            if (changePct > 0.6) {
+                score += 2;
+            } else if (changePct > 0.2) {
+                score += 1;
+            } else if (changePct < -0.6) {
+                score -= 2;
+            } else if (changePct < -0.2) {
+                score -= 1;
+            }
+
+            if (outlook === 'strengthening') {
+                score += 1;
+            } else if (outlook === 'likely_weakening') {
+                score -= 1;
+            }
+
+            if (riskLevel === 'critical' || riskLevel === 'high') {
+                score -= 1;
+            }
+
+            if (score >= 2) {
+                return { signal: 'buy', score };
+            }
+            if (score <= -2) {
+                return { signal: 'sell', score };
+            }
+            return { signal: 'hold', score };
+        }
+
+        function buildOverallSignal() {
+            const votes = [];
+
+            if (lastPrediction) {
+                const primaryChange = Number(lastPrediction.day14_change ?? lastPrediction.change ?? 0);
+                const primaryOutlook = lastPrediction.day14_outlook || lastPrediction.week2_outlook || 'unknown';
+                const primaryRisk = (lastPrediction.weakening_risk || {}).risk_level || 'none';
+                const primary = classifySignal(primaryChange, {
+                    outlook: primaryOutlook,
+                    riskLevel: primaryRisk,
+                });
+                votes.push({
+                    name: 'Main Model',
+                    signal: primary.signal,
+                    score: primary.score,
+                    change: primaryChange,
+                });
+            }
+
+            if (lastProphetPrediction) {
+                const prophetChange = Number(lastProphetPrediction.day14_change ?? 0);
+                const prophet = classifySignal(prophetChange);
+                votes.push({
+                    name: 'Prophet',
+                    signal: prophet.signal,
+                    score: prophet.score,
+                    change: prophetChange,
+                });
+            }
+
+            if (!votes.length) {
+                return {
+                    signal: 'hold',
+                    reason: 'Run at least one prediction first.',
+                    confidence: 0,
+                    votes,
+                };
+            }
+
+            const aggregateScore = votes.reduce((sum, v) => sum + v.score, 0);
+            let signal = 'hold';
+            if (aggregateScore >= 2) {
+                signal = 'buy';
+            } else if (aggregateScore <= -2) {
+                signal = 'sell';
+            }
+
+            const confidence = Math.min(100, Math.round((Math.abs(aggregateScore) / (votes.length * 3)) * 100));
+            const reason = votes
+                .map(v => `${v.name}: ${v.signal.toUpperCase()} (${v.change >= 0 ? '+' : ''}${v.change.toFixed(2)}%)`)
+                .join(' | ');
+
+            return { signal, reason, confidence, votes };
+        }
+
+        function updateOverallSignal() {
+            const btn = document.getElementById('overallSignalBtn');
+            const summary = document.getElementById('overallSignalSummary');
+            const signalData = buildOverallSignal();
+
+            btn.className = `overall-signal-btn ${signalData.signal}`;
+            btn.textContent = signalData.signal.toUpperCase();
+            summary.textContent = `${signalData.reason} Confidence: ${signalData.confidence}%`;
+        }
+
+        function computeOverallSignalFromAll() {
+            const btn = document.getElementById('overallSignalComputeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span>Computing...';
+
+            Promise.all([
+                fetch('/api/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                }).then(r => r.json()),
+                fetch('/api/prophet-predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                }).then(r => r.json())
+            ])
+            .then(([mainData, prophetData]) => {
+                if (mainData.success) {
+                    lastPrediction = mainData;
+                    const day7Price = mainData.day7_predicted_price ?? mainData.week1_predicted_price;
+                    const day14Price = mainData.day14_predicted_price ?? mainData.week2_predicted_price;
+                    document.getElementById('predictedPriceDay7').textContent = day7Price.toFixed(4);
+                    document.getElementById('predictedPriceDay14').textContent = day14Price.toFixed(4);
+                    updateTrendSignal(mainData);
+                    applyPredictionToCharts(mainData);
+                }
+
+                if (prophetData.success) {
+                    lastProphetPrediction = prophetData;
+                    document.getElementById('prophetCurrentPrice').textContent = prophetData.current_price.toFixed(4);
+                    document.getElementById('prophetDay7').textContent = prophetData.day7_predicted_price.toFixed(4);
+                    document.getElementById('prophetDay14').textContent = prophetData.day14_predicted_price.toFixed(4);
+                }
+
+                updateOverallSignal();
+
+                if (!mainData.success && !prophetData.success) {
+                    showError('Could not compute overall signal: both models failed.');
+                    return;
+                }
+                showSuccess('Overall signal computed from available model predictions.');
+            })
+            .catch(error => showError('Error computing overall signal: ' + error))
+            .finally(() => {
+                btn.disabled = false;
+                btn.innerHTML = 'Compute Overall Signal';
             });
         }
 
